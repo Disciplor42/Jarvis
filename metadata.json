@@ -1,0 +1,8 @@
+{
+  "name": "JARVIS - Stark Industries",
+  "description": "An all-in-one AI-powered task and calendar management platform. Organize your life with natural language scheduling, smart daily briefings, and seamless project tracking.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
