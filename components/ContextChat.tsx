@@ -9,7 +9,7 @@ interface ContextChatProps {
     onClose: () => void; // Kept for internal close button if needed, or handled by parent window
     contextTask: Task | null;
     groqApiKey: string;
-    modelConfig: { friday: string, jarvis: string, vision: string, transcription: string };
+    modelConfig: { jarvis: string; transcription: string };
     onCommandProcessed: (results: AiParseResult[]) => void;
 }
 
@@ -21,8 +21,20 @@ const ContextChat: React.FC<ContextChatProps> = ({
     const [isTyping, setIsTyping] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    // Voice Input Hook
-    const { isListening, toggleListening } = useVoiceInput((text) => setInput(text));
+    // Voice Input Hook (Consistently using Groq Whisper)
+    const { 
+      isListening, 
+      isProcessing: isTranscribing, 
+      toggleListening, 
+      transcript 
+    } = useVoiceInput(
+      (text) => {
+        setInput(text);
+        // Note: We don't auto-send here to allow the user to review the transcript in Chat mode
+      }, 
+      groqApiKey, 
+      modelConfig.transcription
+    );
 
     // Initialize chat when context changes
     useEffect(() => {
@@ -136,9 +148,12 @@ const ContextChat: React.FC<ContextChatProps> = ({
                         </div>
                     </div>
                 ))}
-                {isTyping && (
+                {(isTyping || isTranscribing) && (
                     <div className="flex justify-start">
-                        <div className="bg-cyan-950/20 border border-cyan-800/20 p-2 rounded-sm flex gap-1">
+                        <div className="bg-cyan-950/20 border border-cyan-800/20 p-2 rounded-sm flex gap-1 items-center">
+                            <span className="text-[9px] text-cyan-600 font-mono uppercase mr-2">
+                              {isTranscribing ? 'Hearing...' : 'Thinking...'}
+                            </span>
                             <div className="w-1 h-1 bg-cyan-600 rounded-full animate-bounce"></div>
                             <div className="w-1 h-1 bg-cyan-600 rounded-full animate-bounce delay-75"></div>
                             <div className="w-1 h-1 bg-cyan-600 rounded-full animate-bounce delay-150"></div>
@@ -155,25 +170,31 @@ const ContextChat: React.FC<ContextChatProps> = ({
                             type="text" 
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
-                            placeholder={isListening ? "Listening..." : "Transmit orders..."}
+                            placeholder={isListening ? "Listening... (Press to stop)" : isTranscribing ? "Transcribing..." : "Transmit orders..."}
                             className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs p-2 pr-8 focus:outline-none focus:border-cyan-700 font-mono rounded-none transition-colors"
                             autoFocus
+                            disabled={isTranscribing || isTyping}
                         />
                         <button 
                             type="button"
                             onClick={toggleListening}
-                            className={`absolute right-2 top-1/2 -translate-y-1/2 ${isListening ? 'text-red-500 animate-pulse' : 'text-slate-500 hover:text-cyan-400'}`}
-                            title="Voice Input"
+                            disabled={isTyping}
+                            className={`absolute right-2 top-1/2 -translate-y-1/2 ${isListening ? 'text-red-500 animate-pulse' : isTranscribing ? 'text-cyan-400 animate-spin' : 'text-slate-500 hover:text-cyan-400'}`}
+                            title="Voice Input (Groq Whisper)"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                                <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
-                                <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
-                            </svg>
+                            {isTranscribing ? (
+                                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                                    <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
+                                    <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
+                                </svg>
+                            )}
                         </button>
                     </div>
                     <button 
                         type="submit" 
-                        disabled={!input.trim()}
+                        disabled={!input.trim() || isTranscribing || isTyping}
                         className="bg-cyan-900/20 border border-cyan-800 text-cyan-500 p-2 hover:bg-cyan-900/40 hover:text-cyan-300 transition-colors disabled:opacity-30"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">

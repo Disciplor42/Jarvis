@@ -35,7 +35,8 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({
                          {result.taskData.dueDate && <span>📅 {result.taskData.dueDate} {result.taskData.dueTime}</span>}
                          {result.taskData.priority && <span className="uppercase text-amber-400">⚠ {result.taskData.priority}</span>}
                     </div>
-                    {result.taskData.project && <div className="text-cyan-400">PRJ: {result.taskData.project}</div>}
+                    {/* Corrected project to projectId */}
+                    {result.taskData.projectId && <div className="text-cyan-400">PRJ: {result.taskData.projectId}</div>}
                     {result.taskData.details && <div className="italic text-slate-500">"{result.taskData.details}"</div>}
                 </div>
             );
@@ -60,6 +61,7 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({
                  </div>
              );
         }
+        // Added noteData handling
         if (result.action === 'CREATE_NOTE' && result.noteData) {
              return (
                  <div className="text-xs text-slate-300 font-mono">
@@ -68,6 +70,7 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({
                  </div>
              );
         }
+        // Added folderData handling
         if (result.action === 'CREATE_FOLDER' && result.folderData) {
             return <div className="text-xs text-slate-300 font-mono">Folder: {result.folderData.name}</div>;
         }

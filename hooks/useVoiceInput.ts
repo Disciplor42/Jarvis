@@ -1,133 +1,111 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { AudioRecorder, transcribeAudio } from '../services/groqService';
 
-export const useVoiceInput = (onCommand: (text: string) => void) => {
-    const [isListening, setIsListening] = useState(false);
-    const [voiceError, setVoiceError] = useState<string | null>(null);
-    const [transcript, setTranscript] = useState(''); // Live transcript
-    
-    const callbackRef = useRef(onCommand);
-    const recognitionRef = useRef<any>(null);
-    const isStartPending = useRef(false);
+/**
+ * useVoiceInput Hook
+ * Consistently uses Groq Whisper for all voice-to-text operations.
+ */
+export const useVoiceInput = (
+  onCommand: (text: string) => void,
+  apiKey: string,
+  model: string
+) => {
+  const [isListening, setIsListening] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState('');
+  
+  const recorderRef = useRef<AudioRecorder | null>(null);
+  const onCommandRef = useRef(onCommand);
 
-    useEffect(() => {
-        callbackRef.current = onCommand;
-    }, [onCommand]);
+  // Keep onCommand fresh to avoid closure staleness
+  useEffect(() => {
+    onCommandRef.current = onCommand;
+  }, [onCommand]);
 
-    const stop = useCallback(() => {
-        if (recognitionRef.current) {
-            try {
-                recognitionRef.current.stop();
-            } catch (e) {
-                // Ignore errors on stop
-            }
+  const stop = useCallback(async () => {
+    if (!recorderRef.current || !isListening) return;
+
+    setIsListening(false);
+    setIsProcessing(true);
+    setVoiceError(null);
+
+    try {
+      const audioBlob = await recorderRef.current.stop();
+      if (audioBlob && audioBlob.size > 0) {
+        const text = await transcribeAudio(apiKey, model, audioBlob);
+        setTranscript(text);
+        if (text.trim()) {
+          onCommandRef.current(text);
         }
-        setIsListening(false);
-    }, []);
+      }
+    } catch (err: any) {
+      console.error("Transcription failed:", err);
+      setVoiceError("TRANSCRIPTION FAIL");
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [isListening, apiKey, model]);
 
-    const start = useCallback(() => {
-        if (isStartPending.current) return;
-        
-        setVoiceError(null);
-        setTranscript(''); // Clear previous
-        
-        if (recognitionRef.current) {
-            try { recognitionRef.current.abort(); } catch(e){}
-            recognitionRef.current = null;
-        }
+  const start = useCallback(async () => {
+    if (isListening || isProcessing) return;
 
-        if (typeof window === 'undefined') return;
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        
-        if (!SpeechRecognition) {
-            setVoiceError("NOT SUPPORTED");
-            return;
-        }
+    setVoiceError(null);
+    setTranscript('');
 
-        isStartPending.current = true;
-        setIsListening(true); 
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setVoiceError("INSECURE CONTEXT");
+      return;
+    }
 
-        const recognition = new SpeechRecognition();
-        recognition.continuous = false; 
-        recognition.interimResults = true; // CHANGED: Enable live text feedback
-        recognition.lang = 'en-US';
+    try {
+      if (!apiKey) {
+        setVoiceError("NO API KEY");
+        return;
+      }
 
-        recognition.onstart = () => {
-            isStartPending.current = false;
-            setIsListening(true);
-            setVoiceError(null);
-        };
+      if (!recorderRef.current) {
+        recorderRef.current = new AudioRecorder();
+      }
 
-        recognition.onresult = (event: any) => {
-            let interimTranscript = '';
-            let finalTranscript = '';
+      await recorderRef.current.start();
+      setIsListening(true);
+    } catch (err: any) {
+      console.error("Voice start failed:", err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setVoiceError("MIC BLOCKED");
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setVoiceError("NO MIC FOUND");
+      } else {
+        setVoiceError("INIT FAIL");
+      }
+      setIsListening(false);
+    }
+  }, [isListening, isProcessing, apiKey]);
 
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) {
-                    finalTranscript += event.results[i][0].transcript;
-                } else {
-                    interimTranscript += event.results[i][0].transcript;
-                }
-            }
+  const toggleListening = useCallback(() => {
+    if (isListening) {
+      stop();
+    } else {
+      start();
+    }
+  }, [isListening, start, stop]);
 
-            // Update live view
-            setTranscript(finalTranscript || interimTranscript);
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recorderRef.current && isListening) {
+        recorderRef.current.stop().catch(() => {});
+      }
+    };
+  }, [isListening]);
 
-            if (finalTranscript && finalTranscript.trim()) {
-                callbackRef.current(finalTranscript);
-                // We typically stop after one command, or you can keep it open
-                // For this implementation, we rely on the stop() call in onend or manual
-            }
-        };
-
-        recognition.onerror = (event: any) => {
-            isStartPending.current = false;
-            console.warn("Voice Error:", event.error);
-            if (event.error === 'no-speech') {
-                // Ignorable
-            } else if (event.error === 'network') {
-                setVoiceError("NET ERROR");
-            } else if (event.error === 'not-allowed') {
-                setVoiceError("BLOCKED");
-            } else {
-                setVoiceError(event.error.toUpperCase());
-            }
-            setIsListening(false);
-            recognitionRef.current = null;
-        };
-
-        recognition.onend = () => {
-            isStartPending.current = false;
-            setIsListening(false);
-            recognitionRef.current = null;
-        };
-
-        try {
-            recognition.start();
-            recognitionRef.current = recognition;
-        } catch (e) {
-            console.error("Start Error:", e);
-            isStartPending.current = false;
-            setVoiceError("START FAIL");
-            setIsListening(false);
-        }
-    }, []);
-
-    const toggleListening = useCallback(() => {
-        if (isListening || isStartPending.current) {
-            stop();
-        } else {
-            start();
-        }
-    }, [isListening, start, stop]);
-
-    useEffect(() => {
-        return () => {
-            if (recognitionRef.current) {
-                try { recognitionRef.current.abort(); } catch(e){}
-            }
-        };
-    }, []);
-
-    return { isListening, toggleListening, voiceError, transcript };
+  return { 
+    isListening, 
+    isProcessing, 
+    toggleListening, 
+    voiceError, 
+    transcript 
+  };
 };

@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Task, CalendarEvent, RecurrenceRule, Subtask } from '../types';
 import { parseUserCommand } from '../services/aiService';
+import { useVoiceInput } from '../hooks/useVoiceInput';
 
 interface ManualEntryModalProps {
   isOpen: boolean;
@@ -13,7 +14,7 @@ interface ManualEntryModalProps {
   isDraft?: boolean; // New prop to indicate if editing a draft proposal
   apiKey: string;
   groqApiKey: string;
-  modelConfig: { friday: string, jarvis: string, vision: string, transcription: string };
+  modelConfig: { jarvis: string; transcription: string };
 }
 
 const ManualEntryModal: React.FC<ManualEntryModalProps> = ({ 
@@ -52,56 +53,28 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
   // AI Assist State
   const [aiInput, setAiInput] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [recognition, setRecognition] = useState<any>(null);
 
-  // Initialize Speech Recognition
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const recognitionInstance = new SpeechRecognition();
-        recognitionInstance.continuous = false;
-        recognitionInstance.interimResults = false;
-        recognitionInstance.lang = 'en-US';
-        
-        recognitionInstance.onresult = (event: any) => {
-          const transcript = event.results[0][0].transcript;
-          setAiInput(transcript);
-          // Auto-submit on voice end for fluidity
-          handleAiAssist(transcript);
-          setIsListening(false);
-        };
-        recognitionInstance.onerror = () => setIsListening(false);
-        recognitionInstance.onend = () => setIsListening(false);
-        setRecognition(recognitionInstance);
-      }
-    }
-  }, []);
-
-  const toggleListening = () => {
-    if (!recognition) {
-        alert("Microphone not supported in this browser.");
-        return;
-    }
-    if (isListening) {
-      recognition.stop();
-    } else {
-      try {
-        recognition.start();
-        setIsListening(true);
-      } catch (e) {
-        console.error("Mic Error:", e);
-      }
-    }
-  };
+  // Unified Voice Input using Groq Whisper
+  const { 
+    isListening, 
+    isProcessing: isTranscribing, 
+    toggleListening 
+  } = useVoiceInput(
+    (text) => {
+      setAiInput(text);
+      handleAiAssist(text);
+    }, 
+    groqApiKey, 
+    modelConfig.transcription
+  );
 
   // Load task data when editing
   useEffect(() => {
     if (taskToEdit) {
       setTitle(taskToEdit.title);
       setPriority(taskToEdit.priority);
-      setProject(taskToEdit.project || '');
+      // Corrected project to projectId
+      setProject(taskToEdit.projectId || '');
       setDetails(taskToEdit.details || '');
       setSubtasks(taskToEdit.subtasks || []);
       setLabels(taskToEdit.labels || []);
@@ -157,7 +130,8 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
     setIsAiProcessing(true);
     try {
         // Just send empty context for the modal helper
-        const results = await parseUserCommand(text, groqApiKey, modelConfig, 'JARVIS', [], []);
+        // Adding empty projects array as 7th argument
+        const results = await parseUserCommand(text, groqApiKey, modelConfig, 'JARVIS', [], [], []);
         
         // Use the first result to populate the modal
         const result = results[0];
@@ -166,7 +140,8 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
         if (result.action === 'CREATE_TASK' && result.taskData) {
             if (result.taskData.title) setTitle(result.taskData.title);
             if (result.taskData.priority) setPriority(result.taskData.priority);
-            if (result.taskData.project) setProject(result.taskData.project);
+            // Corrected project to projectId
+            if (result.taskData.projectId) setProject(result.taskData.projectId);
             if (result.taskData.details) setDetails(result.taskData.details);
             if (result.taskData.dueDate) {
                  const d = new Date(result.taskData.dueDate);
@@ -244,7 +219,7 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
     const taskPayload = {
       title,
       priority,
-      project: project || 'General',
+      projectId: project || 'General',
       dueDate: finalDate,
       dueTime: dueTime || undefined,
       endTime: endTime || undefined,
@@ -262,6 +237,8 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
     
     onClose();
   };
+
+  const isGlobalProcessing = isAiProcessing || isTranscribing;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
@@ -284,26 +261,32 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
                     value={aiInput}
                     onChange={(e) => setAiInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleAiAssist(); }}
-                    disabled={isAiProcessing}
-                    placeholder={isAiProcessing ? "Processing..." : isListening ? "Listening..." : "JARVIS: 'Clean cycle tomorrow 12pm to 1pm'"}
+                    disabled={isGlobalProcessing}
+                    placeholder={isGlobalProcessing ? (isTranscribing ? "Hearing frequencies..." : "Processing logic...") : isListening ? "Listening... (Press icon to finish)" : "JARVIS: 'Clean cycle tomorrow 12pm'"}
                     className="w-full bg-slate-900 border border-slate-700 text-cyan-400 text-xs px-3 py-2 focus:border-cyan-500 focus:outline-none placeholder-slate-600 font-mono rounded-none"
                 />
-                {isAiProcessing && (
+                {isGlobalProcessing && (
                     <div className="absolute right-2 top-2 w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
                 )}
              </div>
              <button 
                 onClick={toggleListening}
-                className={`p-2 border border-slate-700 hover:border-cyan-500 transition-colors ${isListening ? 'bg-red-900/30 text-red-500 animate-pulse border-red-500' : 'text-cyan-600 hover:text-cyan-400'}`}
+                disabled={isGlobalProcessing && !isListening}
+                className={`p-2 border border-slate-700 hover:border-cyan-500 transition-colors ${isListening ? 'bg-red-900/30 text-red-500 animate-pulse border-red-500' : isTranscribing ? 'text-cyan-400 animate-spin' : 'text-cyan-600 hover:text-cyan-400'}`}
              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                    <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
-                    <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
-                </svg>
+                {isTranscribing ? (
+                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                      <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
+                      <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
+                  </svg>
+                )}
              </button>
              <button 
                 onClick={() => handleAiAssist()}
-                className="px-3 py-2 bg-cyan-900/20 border border-cyan-900 text-cyan-500 hover:bg-cyan-900/40 text-[10px] font-bold font-tech uppercase tracking-wider transition-colors"
+                disabled={isGlobalProcessing}
+                className="px-3 py-2 bg-cyan-900/20 border border-cyan-900 text-cyan-500 hover:bg-cyan-900/40 text-[10px] font-bold font-tech uppercase tracking-wider transition-colors disabled:opacity-50"
              >
                 ENGAGE
              </button>
@@ -452,7 +435,7 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
                             className="text-slate-600 hover:text-red-500"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 001.06-1.06L10 8.94 6.28 5.22z" />
                             </svg>
                         </button>
                         </div>

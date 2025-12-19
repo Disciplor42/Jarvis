@@ -17,10 +17,10 @@ export const generateDailyBriefing = async (
     const groq = new Groq({ apiKey, dangerouslyAllowBrowser: true });
     
     // Default to a high-reasoning model if none selected, utilizing Groq's Llama options
-    const activeModel = model || 'llama-3.3-70b-versatile';
+    const activeModel = model || 'moonshotai/kimi-k2-instruct';
 
     const systemPrompt = `
-    You are VISION, a highly advanced AI synthesizer for Stark Industries.
+    You are JARVIS, a highly advanced AI synthesizer for Stark Industries.
     Your goal is to provide a tactical Morning Briefing for ${username}.
     
     INPUT DATA:

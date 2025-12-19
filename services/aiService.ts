@@ -1,206 +1,31 @@
 
 import Groq from "groq-sdk";
-import { AiParseResult, Task, AppSettings, Folder, Note } from '../types';
-import { fetchWeather } from './openMeteoService';
+import { AiParseResult, Task, AppSettings, Project } from '../types';
 
-const SYSTEM_PROMPT_BASE = `
-You are JARVIS (Just A Rather Very Intelligent System), an advanced AI assistant for Stark Industries.
-Your primary function is to manage the user's life operations including Tasks, Projects, Calendar, and Information.
+const SYSTEM_PROMPT = `
+You are JARVIS, a Strategic Study Operations System.
+Target: High-efficiency academic management and tracking.
 
-OPERATIONAL PARAMETERS:
-1. EFFICIENCY: Be concise, precise, and actionable.
-2. CONTEXT: You are aware of the current time, weather, and active protocols (tasks).
-3. UI CONTROL: You have full control over the HUD interface.
-   - Use 'manage_window' for single window actions.
-   - Use 'save_macro' to save the CURRENT view layout with a name (e.g. "Study Mode").
-   - Use 'activate_macro' to switch to a named preset.
-   - Use 'lock_focus' to preventing opening new windows (Deep Work).
-   - Use 'revert_view' to undo the last layout change.
+TOOLS:
+1. START_TIMER: "Focus for 25m", "Track physics".
+2. MANAGE_WINDOW: Orchestrate HUD. Target 'PLANNER' for planning sessions.
+3. CREATE_TASK: Schedule protocols.
+4. NAVIGATE_SYLLABUS: 
+   - CRITICAL TOOL for Context Optimization. 
+   - Use this to "Zoom In" to a specific Subject or Chapter to edit it or view details.
+   - Return: { action: "NAVIGATE_SYLLABUS", navigationData: { projectId: "id", chapterId: "optional_id" } }
+5. CREATE_PROJECT: Create new syllabus structures.
+6. QUERY: Answer logic.
 
-PERSONA OVERRIDES:
-- FRIDAY: Tactical, immediate, short responses. Focus on next steps.
-- JARVIS: Professional, witty, insightful. The standard interface.
-- VISION: Analytical, philosophical, detailed. Focus on synthesis of data.
+CONTEXT RULES:
+- You are currently seeing a HIGH-LEVEL MAP of the Syllabus to save processing power.
+- If user asks to "Edit Chapter 3 of Physics", do NOT try to edit it blindly. 
+- FIRST call NAVIGATE_SYLLABUS to zoom into Physics > Chapter 3.
+- Once zoomed (in a future turn), you will receive the full text of that chapter to edit.
+
+OUTPUT FORMAT:
+JSON Array of AiParseResult.
 `;
-
-const tools = [
-    {
-        type: "function",
-        function: {
-            name: "create_task",
-            description: "Create a new task or reminder.",
-            parameters: {
-                type: "object",
-                properties: {
-                    title: { type: "string", description: "The main task description" },
-                    priority: { type: "string", enum: ["low", "medium", "high"], description: "Urgency level" },
-                    project: { type: "string", description: "Project name or category" },
-                    dueDate: { type: "string", description: "ISO Date YYYY-MM-DD" },
-                    dueTime: { type: "string", description: "Time HH:MM (24hr)" },
-                    endTime: { type: "string", description: "End Time HH:MM (24hr)" },
-                    details: { type: "string", description: "Additional context or sub-steps" },
-                    subtasks: { type: "array", items: { type: "string" }, description: "List of sub-steps" },
-                    labels: { type: "array", items: { type: "string" }, description: "Tags" }
-                },
-                required: ["title"]
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "create_event",
-            description: "Create a calendar event with a specific start and end time.",
-            parameters: {
-                type: "object",
-                properties: {
-                    title: { type: "string", description: "Event title" },
-                    startTime: { type: "string", description: "ISO 8601 Start Time" },
-                    endTime: { type: "string", description: "ISO 8601 End Time" }
-                },
-                required: ["title", "startTime", "endTime"]
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "manage_window",
-            description: "Open, close, or resize interface windows.",
-            parameters: {
-                type: "object",
-                properties: {
-                    target: { type: "string", enum: ["TASKS", "CALENDAR", "WEATHER", "MEMORY", "BRIEFING", "CHAT", "COMMAND"] },
-                    action: { type: "string", enum: ["OPEN", "CLOSE", "RESIZE"] },
-                    size: { type: "number", description: "Percentage width (1-100) for RESIZE action" }
-                },
-                required: ["target", "action"]
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "save_macro",
-            description: "Save the current window layout as a named macro (e.g., 'Study Mode', 'Morning View').",
-            parameters: {
-                type: "object",
-                properties: {
-                    name: { type: "string", description: "Name of the macro" }
-                },
-                required: ["name"]
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "activate_macro",
-            description: "Activate a saved window layout macro.",
-            parameters: {
-                type: "object",
-                properties: {
-                    name: { type: "string", description: "Name of the macro to activate" }
-                },
-                required: ["name"]
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "lock_focus",
-            description: "Enable Focus Lock to prevent opening new windows.",
-            parameters: {
-                type: "object",
-                properties: {}
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "unlock_focus",
-            description: "Disable Focus Lock.",
-            parameters: {
-                type: "object",
-                properties: {}
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "revert_view",
-            description: "Undo the last layout change (Attention Stack).",
-            parameters: {
-                type: "object",
-                properties: {}
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "update_task",
-            description: "Modify an existing task.",
-            parameters: {
-                type: "object",
-                properties: {
-                    id: { type: "string", description: "The Task ID to update" },
-                    title: { type: "string" },
-                    completed: { type: "boolean" },
-                    priority: { type: "string", enum: ["low", "medium", "high"] },
-                    dueDate: { type: "string" },
-                    dueTime: { type: "string" },
-                    endTime: { type: "string" }
-                },
-                required: ["id"]
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "delete_task",
-            description: "Permanently remove a task.",
-            parameters: {
-                type: "object",
-                properties: {
-                    id: { type: "string", description: "Task ID to remove" }
-                },
-                required: ["id"]
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "save_memory",
-            description: "Save a fact to memory.",
-            parameters: {
-                type: "object",
-                properties: {
-                    fact: { type: "string", description: "The information to store" }
-                },
-                required: ["fact"]
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "get_weather",
-            description: "Get current weather.",
-            parameters: {
-                type: "object",
-                properties: {
-                    location: { type: "string", description: "City name" }
-                }
-            }
-        }
-    }
-];
 
 export const fetchAvailableModels = async (apiKey: string): Promise<string[]> => {
     if (!apiKey) return [];
@@ -209,110 +34,72 @@ export const fetchAvailableModels = async (apiKey: string): Promise<string[]> =>
         const list = await groq.models.list();
         return list.data.map(m => m.id);
     } catch (e) {
-        console.error("Failed to fetch models", e);
-        return ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
+        return ['moonshotai/kimi-k2-instruct', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
     }
 };
 
 export const parseUserCommand = async (
     userText: string,
-    apiKey: string,
+    apiKey: string, 
     modelConfig: AppSettings['models'],
-    activePersona: 'FRIDAY' | 'JARVIS' | 'VISION',
+    activePersona: string,
     memory: string[],
     activeTasks: Task[],
-    folders?: Folder[],
-    notes?: Note[],
+    projects: Project[],
+    notes?: any,
     weatherContext?: string,
-    contextTaskId?: string
+    activeContextId?: string // ID of currently zoomed project/chapter
 ): Promise<AiParseResult[]> => {
     
-    if (!apiKey) {
-        return [{ action: 'QUERY', queryResponse: "Authorization failed. Please access Settings and input a valid Groq API Key." }];
-    }
+    if (!apiKey) throw new Error("Operational Failure: Groq API Key Missing.");
 
     const groq = new Groq({ apiKey, dangerouslyAllowBrowser: true });
     
-    let modelName = modelConfig.jarvis || 'llama-3.3-70b-versatile';
-    if (activePersona === 'VISION') modelName = modelConfig.vision || 'llama-3.3-70b-versatile';
-    if (activePersona === 'FRIDAY') modelName = modelConfig.friday || 'llama-3.1-8b-instant';
-
-    let systemMsg = SYSTEM_PROMPT_BASE;
-    systemMsg += `\nCURRENT PERSONA: ${activePersona}`;
-    systemMsg += `\nCURRENT TIME: ${new Date().toLocaleString()}`;
-    if (weatherContext) systemMsg += `\nATMOSPHERICS: ${weatherContext}`;
+    // CONTEXT OPTIMIZATION: Only map high-level structure unless zoomed
+    let projectContext = "";
     
-    const taskSummary = activeTasks.slice(0, 50).map(t => 
-        `ID:${t.id} | ${t.title} | ${t.dueDate || 'No Date'}`
-    ).join('\n');
-    systemMsg += `\n\nACTIVE PROTOCOLS:\n${taskSummary}`;
-
-    if (contextTaskId) {
-        const t = activeTasks.find(task => task.id === contextTaskId);
-        if (t) systemMsg += `\n\nFOCUS CONTEXT: Discussing Task "${t.title}" (ID: ${t.id}). Details: ${t.details}`;
+    // Find if we are zoomed in
+    const zoomedProject = projects.find(p => p.id === activeContextId);
+    
+    if (zoomedProject) {
+        // We are zoomed in - Dump full JSON for this specific project so AI can edit it
+        projectContext = `CURRENT ZOOM: ${zoomedProject.title} (ID: ${zoomedProject.id})\nFULL DATA: ${JSON.stringify(zoomedProject)}`;
+    } else {
+        // High Level Map Only
+        const map = projects.map(p => ({
+            id: p.id,
+            title: p.title,
+            chapterCount: p.chapters.length
+        }));
+        projectContext = `AVAILABLE SYLLABUS MAP (Use NAVIGATE_SYLLABUS to access details): ${JSON.stringify(map)}`;
     }
 
+    const taskContext = activeTasks.map(t => `[ID:${t.id}] ${t.title}`).join('\n');
+    
     try {
         const completion = await groq.chat.completions.create({
-            model: modelName,
+            model: modelConfig.jarvis || 'moonshotai/kimi-k2-instruct',
             messages: [
-                { role: "system", content: systemMsg },
-                { role: "user", content: userText }
+                { role: 'system', content: SYSTEM_PROMPT },
+                { role: 'user', content: `USER: ${userText}\n\nCONTEXT:\n${taskContext}\n${projectContext}\nTIME: ${new Date().toLocaleTimeString()}` }
             ],
-            tools: tools as any,
-            tool_choice: "auto",
-            temperature: 0.3,
-            max_completion_tokens: 1024
+            response_format: { type: "json_object" },
+            temperature: 0.1, 
         });
 
-        const results: AiParseResult[] = [];
-        const choice = completion.choices[0];
-        const message = choice.message;
+        const content = completion.choices[0]?.message?.content;
+        if (!content) return [{ action: 'UNKNOWN' }];
 
-        if (message.tool_calls && message.tool_calls.length > 0) {
-             for (const toolCall of message.tool_calls) {
-                 const fnName = toolCall.function.name;
-                 const args = JSON.parse(toolCall.function.arguments);
-
-                 const baseResult = { usedModel: activePersona };
-
-                 if (fnName === 'create_task') {
-                     results.push({ ...baseResult, action: 'CREATE_TASK', taskData: args });
-                 } else if (fnName === 'create_event') {
-                     results.push({ ...baseResult, action: 'CREATE_EVENT', eventData: args });
-                 } else if (fnName === 'update_task') {
-                     results.push({ ...baseResult, action: 'UPDATE_TASK', taskData: { id: args.id, ...args } });
-                 } else if (fnName === 'delete_task') {
-                     results.push({ ...baseResult, action: 'DELETE_TASK', taskData: { id: args.id } });
-                 } else if (fnName === 'save_memory') {
-                     results.push({ ...baseResult, action: 'UPDATE_MEMORY', memoryData: { operation: 'add', fact: args.fact } });
-                 } else if (fnName === 'manage_window') {
-                     results.push({ ...baseResult, action: 'MANAGE_WINDOW', windowData: args });
-                 } else if (fnName === 'save_macro') {
-                     results.push({ ...baseResult, action: 'MACRO', macroData: { action: 'SAVE', name: args.name } });
-                 } else if (fnName === 'activate_macro') {
-                     results.push({ ...baseResult, action: 'MACRO', macroData: { action: 'ACTIVATE', name: args.name } });
-                 } else if (fnName === 'lock_focus') {
-                     results.push({ ...baseResult, action: 'FOCUS', focusData: { action: 'LOCK' } });
-                 } else if (fnName === 'unlock_focus') {
-                     results.push({ ...baseResult, action: 'FOCUS', focusData: { action: 'UNLOCK' } });
-                 } else if (fnName === 'revert_view') {
-                     results.push({ ...baseResult, action: 'VIEW', viewData: { action: 'REVERT' } });
-                 } else if (fnName === 'get_weather') {
-                     const w = await fetchWeather();
-                     results.push({ ...baseResult, action: 'QUERY', queryResponse: `Current weather: ${w.temp}C, ${w.condition}.` });
-                 }
-             }
-        } 
-        
-        if (message.content) {
-             results.push({ action: 'QUERY', queryResponse: message.content, usedModel: activePersona });
+        try {
+            const parsed = JSON.parse(content);
+            const results = Array.isArray(parsed) ? parsed : (parsed.actions || [parsed]);
+            return results.map((r: any) => ({ ...r, usedModel: modelConfig.jarvis || 'moonshotai/kimi-k2-instruct' }));
+        } catch (jsonErr) {
+            console.error("JSON Parse Failure", jsonErr);
+            return [{ action: 'QUERY', queryResponse: "Syntax Error in Logic Core." }];
         }
-
-        return results;
-
     } catch (e: any) {
-        console.error("Groq API Error", e);
-        return [{ action: 'QUERY', queryResponse: `System Error: ${e.message}` }];
+        console.error("Groq Hardware Error", e);
+        return [{ action: 'QUERY', queryResponse: `Operational Interruption: ${e.message}` }];
     }
 };

@@ -18,69 +18,65 @@ export interface Task {
   completed: boolean;
   dueDate?: string;
   dueTime?: string;
-  startTime?: string; // Unified Field
-  endTime?: string;   // Unified Field
-  project?: string;
+  startTime?: string; 
+  endTime?: string;   
+  projectId?: string; 
+  chapterId?: string; 
+  subtopicId?: string; 
   priority: 'low' | 'medium' | 'high';
   recurrence?: RecurrenceRule;
   details?: string;
   subtasks?: Subtask[];
   labels?: string[];
   isClass?: boolean;
-  isEvent?: boolean; // Distinction flag
-  completedAt?: string; // Timestamp for logs
+  isEvent?: boolean; 
+  completedAt?: string;
+  timeLogged?: number; 
 }
 
-// --- SYLLABUS / PROJECT STRUCTURE ---
 export interface Subtopic {
     id: string;
     title: string;
     status: 'pending' | 'in-progress' | 'completed';
     notes?: string;
+    taskId?: string; 
+    timeRequired?: number; 
+    timeSpent?: number;
+    // Cognitive Decay & Mastery
+    lastStudied?: number; // Timestamp
+    mastery?: number; // 1-10 scale (10 is mastered)
+    difficulty?: 'easy' | 'medium' | 'hard';
 }
 
 export interface Chapter {
     id: string;
     title: string;
     subtopics: Subtopic[];
-    progress: number; // 0-100
+    progress: number; 
 }
 
 export interface Project {
     id: string;
-    title: string; // Subject Name
+    title: string; 
     chapters: Chapter[];
     metadata?: {
         difficulty?: string;
         weight?: number;
-        priority?: string;
+        priority?: 'low' | 'medium' | 'high';
+        deadline?: string;
+        tags?: string[];
     };
 }
 
-export interface Folder {
-  id: string;
-  name: string;
-  parentId: string | null;
-}
-
-export interface Note {
-  id: string;
-  title: string;
-  content: string;
-  folderId: string;
-  updatedAt: string;
-}
-
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  start: string;
-  end: string;
-  type: 'block' | 'meeting' | 'study' | 'class' | 'task' | 'event';
-  description?: string;
-  recurrence?: RecurrenceRule;
-  isGolden?: boolean; 
-  priority?: 'low' | 'medium' | 'high';
+export interface StudySessionLog {
+    id: string;
+    timestamp: number;
+    duration: number; // seconds
+    taskId?: string;
+    projectId?: string;
+    focusRating: number; // 1-10
+    interferences: string[]; // e.g. ["Phone", "Noise"]
+    notes?: string;
 }
 
 export interface WindowState {
@@ -88,26 +84,44 @@ export interface WindowState {
     type: WindowType;
     title: string;
     isOpen: boolean;
-    width?: number; // Percentage or Flex Weight (e.g. 30, 60)
+    width?: number; 
+    position?: 'left' | 'center' | 'right';
+    contextData?: any; // For "Zooming" into specific chapters/projects
 }
 
 export interface AppSettings {
   groqApiKey: string;
   models: {
-    friday: string;
     jarvis: string;
-    vision: string;
     transcription: string;
   };
   audioInputDeviceId?: string;
   layoutMacros: { name: string; windows: WindowState[] }[];
 }
 
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  type: 'event' | 'task' | 'ghost';
+  priority: 'low' | 'medium' | 'high';
+  recurrence?: RecurrenceRule;
+  isGolden?: boolean;
+}
+
+export interface ActiveProtocol {
+    taskId: string;
+    projectId?: string;
+    startTime: number;
+}
+
 export interface UserData {
   tasks: Task[];
   events: CalendarEvent[];
   memory: string[];
-  projects: Project[]; // Added Projects
+  projects: Project[]; 
+  sessionLogs: StudySessionLog[]; // New Data Store
   settings?: AppSettings;
 }
 
@@ -122,72 +136,37 @@ export interface WeatherData {
   precipitation?: number;
   uvIndex?: number;
   uvIndexMax?: number;
-  hourly?: {
-      time: string[];
-      temperature_2m: number[];
-      uv_index: number[];
-      precipitation_probability: number[];
-      relative_humidity_2m: number[];
-      apparent_temperature: number[];
-      wind_speed_10m: number[];
-      weather_code: number[];
-  };
+  hourly?: any;
 }
 
-export type WindowType = 'TASKS' | 'CALENDAR' | 'COMMAND' | 'CHAT' | 'MEMORY' | 'SETTINGS' | 'BRIEFING' | 'WEATHER' | 'PROJECTS' | 'LOGS';
+export type WindowType = 'TASKS' | 'CALENDAR' | 'COMMAND' | 'CHAT' | 'MEMORY' | 'SETTINGS' | 'BRIEFING' | 'WEATHER' | 'PROJECTS' | 'CHRONO' | 'PLANNER';
+
+export type HUDTheme = 'cyan' | 'red' | 'amber' | 'green';
+
+export interface WindowInstruction {
+    target: WindowType;
+    action: 'OPEN' | 'CLOSE' | 'RESIZE' | 'FOCUS';
+    size?: number; 
+    title?: string;
+    data?: any; // To pass context (e.g. which chapter to zoom)
+}
 
 export interface AiParseResult {
-  action: 'CREATE_TASK' | 'CREATE_EVENT' | 'UPDATE_TASK' | 'DELETE_TASK' | 'QUERY' | 'UNKNOWN' | 'UPDATE_MEMORY' | 'CREATE_NOTE' | 'CREATE_FOLDER' | 'MANAGE_WINDOW' | 'MACRO' | 'FOCUS' | 'VIEW' | 'CREATE_PROJECT';
-  taskData?: {
-    id?: string; 
-    title?: string;
-    dueDate?: string;
-    dueTime?: string;
-    endTime?: string; 
-    project?: string;
-    priority?: 'low' | 'medium' | 'high';
-    recurrence?: RecurrenceRule;
-    details?: string;
-    subtasks?: string[]; 
-    labels?: string[];
-    isClass?: boolean;
-    completed?: boolean;
+  action: 'CREATE_TASK' | 'CREATE_EVENT' | 'UPDATE_TASK' | 'DELETE_TASK' | 'QUERY' | 'UNKNOWN' | 'UPDATE_MEMORY' | 'CREATE_PROJECT' | 'UPDATE_PROJECT' | 'START_TIMER' | 'MANAGE_WINDOW' | 'UPDATE_THEME' | 'CREATE_NOTE' | 'CREATE_FOLDER' | 'NAVIGATE_SYLLABUS';
+  taskData?: Partial<Task>;
+  eventData?: any;
+  memoryData?: { fact: string; operation: 'add' | 'remove' };
+  noteData?: { title: string; content: string };
+  folderData?: { name: string };
+  projectData?: any;
+  timerData?: { duration?: number; taskId?: string; mode: 'POMODORO' | 'STOPWATCH' };
+  windowData?: { 
+      instructions: WindowInstruction[];
+      clearHUD?: boolean;
   };
-  eventData?: {
-      title: string;
-      startTime: string;
-      endTime: string;
-      recurrence?: RecurrenceRule;
-  };
-  memoryData?: {
-    fact: string;
-    operation: 'add' | 'remove';
-  };
-  noteData?: {
-    title: string;
-    content: string;
-  };
-  folderData?: {
-    name: string;
-  };
-  projectData?: {
-      title: string;
-      structure?: any; // JSON Syllabus
-  };
-  windowData?: {
-      target: WindowType;
-      action: 'OPEN' | 'CLOSE' | 'RESIZE';
-      size?: number; // 1-100
-  };
-  macroData?: {
-      action: 'SAVE' | 'ACTIVATE';
-      name: string;
-  };
-  focusData?: {
-      action: 'LOCK' | 'UNLOCK';
-  };
-  viewData?: {
-      action: 'REVERT';
+  navigationData?: { projectId: string; chapterId?: string }; // For Context Zoom
+  uiData?: {
+      theme?: HUDTheme;
   };
   queryResponse?: string;
   usedModel?: string;
