@@ -46,8 +46,8 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({
                 <div className="text-xs text-slate-300 space-y-1 font-mono">
                     <div className="font-bold text-yellow-400 text-sm">EVENT: "{result.eventData.title}"</div>
                     <div className="opacity-80">
-                         start: {new Date(result.eventData.startTime).toLocaleString()}<br/>
-                         end: {new Date(result.eventData.endTime).toLocaleString()}
+                         start: {result.eventData.start ? new Date(result.eventData.start).toLocaleString() : 'N/A'}<br/>
+                         end: {result.eventData.end ? new Date(result.eventData.end).toLocaleString() : 'N/A'}
                     </div>
                 </div>
             );

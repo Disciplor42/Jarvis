@@ -1,148 +1,99 @@
 
 import React from 'react';
-import { WindowType } from '../types';
+import { AppMode } from '../types';
 
 interface SystemDockProps {
-    activeWindows: { id: string; type: WindowType; }[];
-    onLaunch: (type: WindowType | 'MEMORY' | 'SETTINGS') => void;
+    currentMode: AppMode;
+    onSwitchMode: (mode: AppMode) => void;
+    onSettings: () => void;
     toggleThanatosis: () => void;
     isThanatosisActive: boolean;
-    isListening: boolean;
-    isProcessing: boolean;
-    onToggleVoice: () => void;
-    voiceError?: string | null;
+    weatherString?: string;
 }
 
-const LAUNCHERS = [
-    { id: 'TASKS', label: 'TASKS', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', color: 'red' },
-    { id: 'CALENDAR', label: 'CALENDAR', icon: 'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5', color: 'purple' },
-    { id: 'CHRONO', label: 'TIME', icon: 'M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z', color: 'orange' },
-    { id: 'PROJECTS', label: 'SYLLABUS', icon: 'M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25', color: 'blue' },
-    { id: 'MEMORY', label: 'DATA', icon: 'M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125', color: 'amber' },
-    { id: 'WEATHER', label: 'ENV', icon: 'M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z', color: 'cyan' },
-    { id: 'COMMAND', label: 'COMMS', icon: 'M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2M7 4a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V6a2 2 0 0 1 2-2m10 0a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V6a2 2 0 0 1 2-2M5 14a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6Z', color: 'green' },
-];
-
-const TOOLS = [
-    { id: 'SETTINGS', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' }
+const MODES: { id: AppMode; label: string; shortcut: string; icon: React.ReactNode }[] = [
+    { 
+        id: 'EXECUTE', 
+        label: 'EXECUTE', 
+        shortcut: 'ALT/OPT+1',
+        icon: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M10.5 3.75a6.75 6.75 0 100 13.5 6.75 6.75 0 000-13.5zM2.25 10.5a8.25 8.25 0 1114.59 5.28l4.69 4.69a.75.75 0 11-1.06 1.06l-4.69-4.69A8.25 8.25 0 012.25 10.5zm11.25-1.5a.75.75 0 00-1.5 0v3c0 .414.336.75.75.75h3a.75.75 0 000-1.5h-2.25v-2.25z" clipRule="evenodd" /></svg>
+    },
+    { 
+        id: 'PLAN', 
+        label: 'PLAN', 
+        shortcut: 'ALT/OPT+2',
+        icon: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z" /></svg>
+    },
+    { 
+        id: 'INTEL', 
+        label: 'INTEL', 
+        shortcut: 'ALT/OPT+3',
+        icon: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z" /></svg>
+    }
 ];
 
 const SystemDock: React.FC<SystemDockProps> = ({ 
-    activeWindows, onLaunch, toggleThanatosis, isThanatosisActive,
-    isListening, isProcessing, onToggleVoice, voiceError
+    currentMode, onSwitchMode, onSettings, toggleThanatosis, isThanatosisActive, weatherString 
 }) => {
-    
-    const getStatus = (id: string) => {
-        const win = activeWindows.find(w => w.type === id);
-        return win ? 'active' : 'closed';
-    };
-
     return (
-        <div className="fixed top-1/2 left-4 -translate-y-1/2 z-[100] w-14 flex flex-col items-center py-6 bg-slate-950/90 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-[0_0_30px_rgba(0,0,0,0.5)] gap-6 pointer-events-auto select-none">
-            
-            <div className="flex flex-col items-center gap-4">
-                 <div className={`w-8 h-8 rounded-full border-2 ${isThanatosisActive ? 'border-red-500 animate-pulse' : 'border-cyan-500'} flex items-center justify-center`}>
-                    <div className={`w-3 h-3 rounded-full ${isThanatosisActive ? 'bg-red-500' : 'bg-cyan-500'}`}></div>
-                 </div>
-
-                 <button 
-                    type="button"
-                    onClick={(e) => { 
-                        e.stopPropagation(); 
-                        onToggleVoice(); 
-                    }}
-                    disabled={isProcessing}
-                    className={`
-                        group relative flex items-center justify-center w-10 h-10 rounded-full transition-all duration-300 z-[101]
-                        ${voiceError 
-                            ? 'bg-red-900/50 border-2 border-red-500 animate-pulse' 
-                            : isListening 
-                                ? 'bg-red-600 shadow-[0_0_15px_rgba(220,38,38,0.8)] scale-110' 
-                                : isProcessing 
-                                    ? 'bg-slate-800 border-2 border-slate-600 animate-pulse cursor-wait'
-                                    : 'bg-slate-900 border border-slate-700 hover:border-cyan-500 hover:text-cyan-400 text-slate-400 hover:bg-slate-800'
-                        }
-                    `}
-                    title={voiceError || "Voice Command"}
-                 >
-                     {isProcessing ? (
-                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                     ) : voiceError ? (
-                         <span className="text-[8px] font-bold text-red-500 font-mono text-center leading-none">ERR</span>
-                     ) : (
-                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={`w-5 h-5 ${isListening ? 'text-white animate-pulse' : ''}`}>
-                             <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
-                             <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
-                         </svg>
-                     )}
-                     
-                     {isListening && !voiceError && (
-                         <span className="absolute inset-0 rounded-full border border-red-500 animate-ping opacity-75"></span>
-                     )}
-                     
-                     {voiceError && (
-                         <div className="absolute left-12 bg-red-950 text-red-500 text-[9px] font-bold px-2 py-1 rounded border border-red-500/50 whitespace-nowrap z-[200]">
-                             {voiceError === 'NOT-ALLOWED' ? 'MIC BLOCKED' : voiceError}
-                         </div>
-                     )}
-                 </button>
+        <div className="fixed top-0 left-0 right-0 h-10 bg-black/80 backdrop-blur-md border-b border-white/5 flex items-center justify-between px-6 z-[100] font-tech select-none">
+            {/* Left: Branding & Status */}
+            <div className="flex items-center gap-4">
+                <span className={`text-lg font-bold tracking-[0.2em] ${isThanatosisActive ? 'text-red-600 animate-pulse' : 'text-cyan-500'}`}>
+                    {isThanatosisActive ? 'THANATOS' : 'JARVIS'}
+                </span>
+                <div className="h-4 w-px bg-white/10"></div>
+                {weatherString && (
+                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">{weatherString}</span>
+                )}
             </div>
 
-            <div className="w-6 h-px bg-slate-800/80"></div>
-
-            <div className="flex flex-col items-center gap-4 w-full px-1">
-                {LAUNCHERS.map(app => {
-                    const status = getStatus(app.id);
+            {/* Center: Mode Switchers (The "Tabs") */}
+            <div className="absolute left-1/2 -translate-x-1/2 flex gap-1">
+                {MODES.map((mode) => {
+                    const isActive = currentMode === mode.id;
                     return (
                         <button
-                            key={app.id}
-                            type="button"
-                            onClick={() => onLaunch(app.id as any)}
-                            className={`group relative flex items-center justify-center transition-all duration-300 w-10 h-10 rounded-xl
-                                ${status === 'active' ? 'bg-cyan-500/20 text-cyan-400' : 'hover:bg-slate-800 text-slate-500 hover:text-cyan-400'}
+                            key={mode.id}
+                            onClick={() => onSwitchMode(mode.id)}
+                            className={`
+                                relative px-6 py-2 flex items-center gap-2 transition-all duration-300 group
+                                ${isActive ? 'text-white' : 'text-slate-600 hover:text-slate-400'}
                             `}
-                            title={app.label}
+                            title={`Switch to ${mode.label} (${mode.shortcut})`}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"
-                                className={`transition-colors w-5 h-5`}
-                            >
-                                <path strokeLinecap="round" strokeLinejoin="round" d={app.icon} />
-                            </svg>
-                            {status === 'active' && (
-                                <span className={`absolute -right-1 top-1 w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_5px_cyan]`}></span>
+                            {/* Active Tab Indicator */}
+                            {isActive && (
+                                <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent border-t-2 border-cyan-500"></div>
                             )}
+                            <span className={isActive ? 'text-cyan-400' : ''}>{mode.icon}</span>
+                            <div className="flex flex-col items-start leading-none">
+                                <span className="text-[10px] font-bold uppercase tracking-[0.15em]">{mode.label}</span>
+                                <span className={`text-[7px] font-mono opacity-0 group-hover:opacity-100 transition-opacity ${isActive ? 'text-cyan-500' : 'text-slate-600'}`}>[{mode.shortcut}]</span>
+                            </div>
                         </button>
                     )
                 })}
             </div>
 
-            <div className="flex flex-col items-center gap-4 w-full border-t border-slate-800/50 pt-4">
-                 <button 
-                    type="button"
-                    onClick={toggleThanatosis}
-                    className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-500 group relative
-                        ${isThanatosisActive ? 'text-red-500 animate-pulse' : 'text-slate-600 hover:text-red-500'}
-                    `}
-                    title="PROTOCOL: THANATOS"
-                 >
-                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                        <path fillRule="evenodd" d="M12.963 2.286a.75.75 0 00-1.071-.136 9.742 9.742 0 00-3.539 6.177A7.547 7.547 0 016.648 6.61a.75.75 0 00-1.152-.082A9 9 0 1015.68 4.534a7.46 7.46 0 01-2.717-2.248zM15.75 14.25a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" clipRule="evenodd" />
-                     </svg>
-                 </button>
-
-                 {TOOLS.map(t => (
-                     <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => onLaunch(t.id as any)}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-500 hover:text-white transition-colors"
-                     >
-                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                            <path strokeLinecap="round" strokeLinejoin="round" d={t.icon} />
-                        </svg>
-                     </button>
-                 ))}
-             </div>
+            {/* Right: Tools */}
+            <div className="flex items-center gap-4">
+                <button 
+                    onClick={toggleThanatosis} 
+                    className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 border ${isThanatosisActive ? 'border-red-500 text-red-500 bg-red-900/20' : 'border-slate-800 text-slate-600 hover:border-slate-600'}`}
+                >
+                    {isThanatosisActive ? 'SAFE MODE' : 'DEFCON 5'}
+                </button>
+                <button 
+                    onClick={onSettings}
+                    className="text-slate-500 hover:text-cyan-400 transition-colors"
+                    title="Settings"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <path fillRule="evenodd" d="M7.84 1.804A1 1 0 018.82 1h2.36a1 1 0 01.98.804l.331 1.652a6.993 6.993 0 011.929 1.115l1.598-.54a1 1 0 011.186.447l1.18 2.044a1 1 0 01-.205 1.251l-1.267 1.113a7.047 7.047 0 010 2.228l1.267 1.113a1 1 0 01.206 1.25l-1.18 2.045a1 1 0 01-1.187.447l-1.598-.54a6.993 6.993 0 01-1.929 1.115l-.33 1.652a1 1 0 01-.98.804H8.82a1 1 0 01-.98-.804l-.331-1.652a6.993 6.993 0 01-1.929-1.115l-1.598.54a1 1 0 01-1.186-.447l-1.18-2.044a1 1 0 01.205-1.251l1.267-1.114a7.047 7.047 0 010-2.228l-1.267-1.113a1 1 0 01-.206-1.25l1.18-2.045a1 1 0 011.187-.447l1.598.54A6.993 6.993 0 017.51 3.456l.33-1.652zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+                    </svg>
+                </button>
+            </div>
         </div>
     );
 };

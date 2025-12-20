@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Task, Subtask, WindowType, AiParseResult, Subtopic, Project, HUDTheme, StudySessionLog } from './types';
+import { Task, Subtask, WindowType, AiParseResult, Subtopic, Project, HUDTheme, StudySessionLog, AppMode } from './types';
 
 // Components
 import ManualEntryModal from './components/ManualEntryModal';
@@ -12,6 +12,7 @@ import SystemDock from './components/SystemDock';
 import HUDWindow from './components/HUDWindow';
 import WindowContent from './components/WindowContent';
 import HolographicFeedback from './components/HolographicFeedback';
+import CommandBar from './components/CommandBar';
 
 // Hooks
 import { useWindowManager } from './hooks/useWindowManager';
@@ -26,12 +27,12 @@ export default function App() {
   const [hasLaunched, setHasLaunched] = useState(false);
   const [thanatosisMode, setThanatosisMode] = useState(false); 
   const [currentTheme, setCurrentTheme] = useState<HUDTheme>('cyan');
+  const [currentMode, setCurrentMode] = useState<AppMode>('EXECUTE'); 
   const [notification, setNotification] = useState<string | null>(null);
   const [activeFeedback, setActiveFeedback] = useState<{ transcript: string; intent: string } | null>(null);
 
   const { 
-      windows, toggleWindow, closeWindow, openWindow, batchUpdate,
-      isFocusLocked, setIsFocusLocked 
+      windows, toggleWindow, closeWindow, openWindow, batchUpdate
   } = useWindowManager();
 
   const { timerState, timerControls } = useTimer();
@@ -44,7 +45,7 @@ export default function App() {
   };
 
   const { pendingActions, setPendingActions, handleCommandResults: processAIResults, executeAction } = useActionProcessor(
-      setTasks, setMemory, showNotification, toggleWindow, setProjects, batchUpdate, setCurrentTheme, timerControls
+      setTasks, setMemory, showNotification, toggleWindow, setProjects, batchUpdate, setCurrentTheme, timerControls, setCurrentMode
   );
 
   const [briefingContent, setBriefingContent] = useState('');
@@ -60,7 +61,7 @@ export default function App() {
     try {
       const content = await generateDailyBriefing(
         settings.groqApiKey,
-        settings.models.jarvis, // Use JARVIS for briefing
+        settings.models.jarvis,
         'Tony Stark',
         tasks,
         events,
@@ -81,26 +82,26 @@ export default function App() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isDraftEdit, setIsDraftEdit] = useState(false);
 
-  const activeWindows = windows.filter(w => w.type !== 'COMMAND');
-  const isCommandOpen = windows.some(w => w.type === 'COMMAND');
-
   const handleCommandResults = useCallback((results: AiParseResult[], bypassApproval: boolean = false) => {
-      // Intercept NAVIGATE_SYLLABUS commands to perform immediate UI update
       results.forEach(res => {
-          if (res.action === 'NAVIGATE_SYLLABUS' && res.navigationData) {
-              batchUpdate([{ target: 'PROJECTS', action: 'OPEN', size: 2 }]);
-              showNotification(`ZOOMING: ${res.navigationData.projectId}`);
-              // In a real app, we would set a "ZoomContext" state here that ProjectView reads.
-              // For now, it just opens the window.
+          if (res.action === 'SWITCH_MODE' && res.modeData) {
+              setCurrentMode(res.modeData.mode);
+              showNotification(`MODE SHIFT: ${res.modeData.mode}`);
+          }
+          if (res.action === 'NAVIGATE_SYLLABUS') {
+              setCurrentMode('PLAN');
+          }
+          if (res.action === 'START_TIMER') {
+              setCurrentMode('EXECUTE');
           }
       });
       processAIResults(results, bypassApproval);
-  }, [processAIResults, batchUpdate]);
+  }, [processAIResults]);
 
   const handleVoiceCommand = useCallback(async (text: string) => {
       setIsAILoading(true);
       try {
-          const results = await parseUserCommand(text, settings.groqApiKey, settings.models, 'JARVIS', memory, tasks, projects);
+          const results = await parseUserCommand(text, settings.groqApiKey, settings.models, 'JARVIS', memory, tasks, projects, [], "", undefined, currentMode);
           if (results.length > 0) {
               setActiveFeedback({ transcript: text, intent: results[0]?.action || 'ANALYZING' });
               handleCommandResults(results, thanatosisMode);
@@ -110,9 +111,44 @@ export default function App() {
       } finally {
           setIsAILoading(false);
       }
-  }, [settings.groqApiKey, settings.models, memory, tasks, projects, thanatosisMode, handleCommandResults]);
+  }, [settings.groqApiKey, settings.models, memory, tasks, projects, thanatosisMode, handleCommandResults, currentMode]);
 
   const { isListening, isProcessing: isTranscribing, toggleListening, voiceError } = useVoiceInput(handleVoiceCommand, settings.groqApiKey, settings.models.transcription);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const isInput = (e.target as HTMLElement).matches('input, textarea, select');
+      
+      const isModeModifier = (e.altKey && !e.ctrlKey && !e.shiftKey) || (!e.altKey && e.ctrlKey && !e.metaKey && !e.shiftKey);
+
+      if (isModeModifier) {
+        if (e.code === 'Digit1') { e.preventDefault(); setCurrentMode('EXECUTE'); showNotification("MODE: EXECUTE"); }
+        if (e.code === 'Digit2') { e.preventDefault(); setCurrentMode('PLAN'); showNotification("MODE: PLAN"); }
+        if (e.code === 'Digit3') { e.preventDefault(); setCurrentMode('INTEL'); showNotification("MODE: INTEL"); }
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.code === 'Space') {
+          e.preventDefault();
+          toggleListening();
+          showNotification(isListening ? "VOICE TERMINATED" : "VOICE PROTOCOL ENGAGED");
+      }
+      
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyX') {
+          e.preventDefault();
+          setThanatosisMode(prev => !prev);
+          showNotification(thanatosisMode ? "SAFETY DISENGAGED" : "THANATOS PROTOCOL");
+      }
+
+      if (e.code === 'Escape') {
+          if (isModalOpen) setIsModalOpen(false);
+          if (isSettingsOpen) setIsSettingsOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isListening, toggleListening, isModalOpen, isSettingsOpen, thanatosisMode]);
+
 
   const handleInitializeTaskFromProject = (topic: Subtopic, project: Project) => {
     if (topic.taskId === activeProtocol?.taskId) {
@@ -141,16 +177,11 @@ export default function App() {
     }
 
     startProtocol(taskId, project.id);
-    batchUpdate([
-        { target: 'CHRONO', action: 'OPEN', size: 1 },
-        { target: 'PROJECTS', action: 'OPEN', size: 1.5 }
-    ]);
+    setCurrentMode('EXECUTE'); 
   };
 
   const handleLogSession = (log: StudySessionLog) => {
       setSessionLogs(prev => [...prev, log]);
-      
-      // Update decay timer for related subtopics
       if (log.taskId) {
           const task = tasks.find(t => t.id === log.taskId);
           if (task && task.projectId) {
@@ -161,7 +192,6 @@ export default function App() {
                       chapters: p.chapters.map(c => ({
                           ...c,
                           subtopics: c.subtopics.map(s => {
-                              // Rough match by taskId
                               if (s.taskId === log.taskId) {
                                   return { ...s, lastStudied: Date.now() };
                               }
@@ -175,6 +205,83 @@ export default function App() {
   };
 
   const effectiveTheme = thanatosisMode ? 'red' : currentTheme;
+
+  const renderModeContent = () => {
+      const commonProps = {
+          data: { tasks, events, memory, projects, weatherData, settings, briefingContent, isBriefingLoading, isProcessing: isAILoading, thanatosisMode, sessionLogs },
+          actions: { setTasks, setMemory, setProjects, setIsProcessing: setIsAILoading, handleCommandResults, handleGenerateBriefing, handleAddSubtask: (tid:string, t:string) => {}, handleToggleSubtask: (tid:string, sid:string) => {}, setEditingTask, setIsDraftEdit, setIsModalOpen, toggleWindow, onInitializeTask: handleInitializeTaskFromProject, onLogSession: handleLogSession },
+          activeProtocolId: activeProtocol?.taskId,
+          timerState,
+          timerControls,
+          currentMode // Passed down
+      };
+
+      if (currentMode === 'EXECUTE') {
+          return (
+              <div className="flex gap-4 h-full">
+                  <div className="flex-[2] h-full flex flex-col gap-4">
+                      <div className="flex-[2] min-h-0">
+                          <HUDWindow id="CHRONO" title="ACTIVE PROTOCOL" onClose={() => {}}>
+                              <WindowContent type="CHRONO" {...commonProps} />
+                          </HUDWindow>
+                      </div>
+                      <div className="flex-1 min-h-0">
+                          <HUDWindow id="TASKS" title="TASK QUEUE" onClose={() => {}}>
+                              <WindowContent type="TASKS" {...commonProps} />
+                          </HUDWindow>
+                      </div>
+                  </div>
+                  <div className="flex-1 h-full min-w-[300px]">
+                      <HUDWindow id="CHAT" title="OPERATIONAL COMMS" onClose={() => {}}>
+                          <WindowContent type="CHAT" {...commonProps} />
+                      </HUDWindow>
+                  </div>
+              </div>
+          );
+      }
+
+      if (currentMode === 'PLAN') {
+          return (
+              <div className="flex gap-4 h-full">
+                  <div className="flex-[2] h-full">
+                      <HUDWindow id="PROJECTS" title="SYLLABUS MAP" onClose={() => {}}>
+                          <WindowContent type="PROJECTS" {...commonProps} />
+                      </HUDWindow>
+                  </div>
+                  <div className="flex-[2] h-full">
+                      <HUDWindow id="CALENDAR" title="TEMPORAL GRID" onClose={() => {}}>
+                          <WindowContent type="CALENDAR" {...commonProps} />
+                      </HUDWindow>
+                  </div>
+              </div>
+          );
+      }
+
+      // Updated INTEL mode to act as the All-In-One Dashboard
+      if (currentMode === 'INTEL') {
+          return (
+              <div className="flex gap-4 h-full">
+                  <div className="flex-[3] h-full">
+                      <HUDWindow id="DASHBOARD" title="MASTER CONTROL // OVERWATCH" onClose={() => {}}>
+                          <WindowContent type="DASHBOARD" {...commonProps} />
+                      </HUDWindow>
+                  </div>
+                  <div className="flex-1 h-full flex flex-col gap-4">
+                       <div className="h-48 shrink-0">
+                          <HUDWindow id="BRIEFING" title="DAILY INTEL" onClose={() => {}}>
+                              <WindowContent type="BRIEFING" {...commonProps} />
+                          </HUDWindow>
+                       </div>
+                       <div className="flex-1">
+                          <HUDWindow id="CHAT_INTEL" title="SECURE CHANNEL" onClose={() => {}}>
+                              <WindowContent type="CHAT" {...commonProps} />
+                          </HUDWindow>
+                       </div>
+                  </div>
+              </div>
+          );
+      }
+  };
 
   if (!hasLaunched) return <LaunchScreen onLaunch={() => setHasLaunched(true)} />;
 
@@ -191,67 +298,38 @@ export default function App() {
       <ApprovalModal isOpen={pendingActions.length > 0} results={pendingActions.map(pa => pa.result)} onClose={() => {}} onApprove={(i) => executeAction(pendingActions[i])} onReject={(i) => setPendingActions(p => p.filter((_, idx) => idx !== i))} onModify={() => {}} onApproveAll={() => {}} onRejectAll={() => setPendingActions([])} theme={effectiveTheme === 'cyan' ? 'cyan' : 'red'} />
       
       <SystemDock 
-        activeWindows={windows} 
-        onLaunch={(type) => type === 'SETTINGS' ? setIsSettingsOpen(true) : toggleWindow(type as WindowType, type)} 
+        currentMode={currentMode}
+        onSwitchMode={setCurrentMode}
+        onSettings={() => setIsSettingsOpen(true)}
         toggleThanatosis={() => setThanatosisMode(!thanatosisMode)} 
-        isThanatosisActive={thanatosisMode} 
-        isListening={isListening} 
-        isProcessing={isAILoading || isTranscribing} 
-        onToggleVoice={toggleListening}
-        voiceError={voiceError}
+        isThanatosisActive={thanatosisMode}
+        weatherString={weatherData ? `${Math.round(weatherData.temp)}° ${weatherData.condition}` : undefined}
       />
       
       {activeFeedback && <HolographicFeedback transcript={activeFeedback.transcript} intent={activeFeedback.intent} onComplete={() => setActiveFeedback(null)} theme={effectiveTheme === 'cyan' ? 'cyan' : 'red'} />}
 
-      <div className="absolute inset-4 pl-24 flex flex-col pointer-events-none">
-          <div className="flex-1 flex flex-col bg-black/40 border border-slate-700/50 backdrop-blur-sm overflow-hidden pointer-events-auto relative">
-              
-              {activeProtocol && (
-                  <div className="absolute inset-0 z-0 pointer-events-none opacity-20 flex items-center justify-center overflow-hidden">
-                      <div className="w-[800px] h-[800px] border border-cyan-500/20 rounded-full animate-spin-slow flex items-center justify-center">
-                          <div className="w-[600px] h-[600px] border border-cyan-500/10 rounded-full animate-spin-reverse"></div>
-                      </div>
-                      <div className="absolute bottom-10 left-10 flex flex-col">
-                          <span className="text-4xl font-tech font-bold text-cyan-400">MISSION_ACTIVE</span>
-                          <span className="text-xs font-mono text-slate-500 tracking-[0.5em]">OPERATIONAL_PROTOCOL_{activeProtocol.taskId.slice(-4)}</span>
-                      </div>
-                  </div>
-              )}
-
-              <div className="flex-1 flex min-h-0 items-stretch overflow-hidden">
-                  {activeWindows.length === 0 && (
-                      <div className="flex-1 flex items-center justify-center opacity-30 select-none text-center">
-                          <div>
-                            <h1 className="text-8xl font-tech font-bold tracking-[0.3em] text-white/10 animate-pulse uppercase">{effectiveTheme === 'red' ? 'THANATOS' : 'JARVIS'}</h1>
-                            <p className="text-xl font-mono text-slate-500 mt-4 tracking-widest uppercase">Systems At Idle</p>
-                          </div>
-                      </div>
-                  )}
-                  {activeWindows.map((win, index) => (
-                      <div key={win.id} style={{ flex: win.width || 1 }} className="relative min-w-[200px] h-full transition-all duration-500 ease-in-out border-r border-slate-800 last:border-0">
-                          <HUDWindow id={win.id} title={win.title} onClose={() => closeWindow(win.id)} noFrame={true}>
-                              <WindowContent 
-                                type={win.type} 
-                                data={{ tasks, events, memory, projects, weatherData, settings, briefingContent, isBriefingLoading, isProcessing: isAILoading, thanatosisMode }} 
-                                actions={{ setTasks, setMemory, setProjects, setIsProcessing: setIsAILoading, handleCommandResults, handleGenerateBriefing, handleAddSubtask: (tid, title) => {}, handleToggleSubtask: (tid, sid) => {}, setEditingTask, setIsDraftEdit, setIsModalOpen, toggleWindow, onInitializeTask: handleInitializeTaskFromProject, onLogSession: handleLogSession }} 
-                                activeProtocolId={activeProtocol?.taskId}
-                                timerState={timerState}
-                                timerControls={timerControls}
-                              />
-                          </HUDWindow>
-                      </div>
-                  ))}
-              </div>
-              {isCommandOpen && (
-                  <div className="h-48 shrink-0 relative border-t border-slate-700/50 bg-black/90">
-                      <HUDWindow id="CMD" title="TERMINAL" onClose={() => closeWindow('COMMAND')} noFrame={true}>
-                          <WindowContent type='COMMAND' data={{ tasks, events, memory, projects, weatherData, settings, briefingContent, isBriefingLoading, isProcessing: isAILoading, thanatosisMode }} actions={{ setTasks, setMemory, setProjects, setIsProcessing: setIsAILoading, handleCommandResults, handleGenerateBriefing, handleAddSubtask: (tid, title) => {}, handleToggleSubtask: (tid, sid) => {}, setEditingTask, setIsDraftEdit, setIsModalOpen, toggleWindow, onLogSession: handleLogSession }} />
-                      </HUDWindow>
-                  </div>
-              )}
+      <div className="absolute inset-0 pt-14 pb-20 px-4 pointer-events-none">
+          <div className="w-full h-full pointer-events-auto transition-all duration-500">
+              {renderModeContent()}
           </div>
       </div>
-      {notification && <div className={`absolute top-20 left-1/2 -translate-x-1/2 z-[110] bg-black border border-cyan-500 text-cyan-400 px-8 py-4 clip-hud-panel animate-fade-in-down shadow-[0_0_20px_rgba(6,182,212,0.3)]`}><span className="font-mono text-sm tracking-widest uppercase">{notification}</span></div>}
+
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-full max-w-3xl z-[120] pointer-events-auto">
+          <CommandBar
+                onCommandProcessed={handleCommandResults}
+                isLoading={isAILoading}
+                setIsLoading={setIsAILoading}
+                memory={memory}
+                activeTasks={tasks}
+                groqApiKey={settings.groqApiKey}
+                modelConfig={settings.models}
+                theme={effectiveTheme === 'cyan' ? 'cyan' : 'red'}
+                weatherData={weatherData}
+                currentMode={currentMode}
+          />
+      </div>
+
+      {notification && <div className={`absolute top-16 right-4 z-[110] bg-black border border-cyan-500 text-cyan-400 px-6 py-2 clip-hud-panel animate-fade-in-down shadow-[0_0_20px_rgba(6,182,212,0.3)]`}><span className="font-mono text-xs tracking-widest uppercase">{notification}</span></div>}
     </HUDContainer>
   );
 }

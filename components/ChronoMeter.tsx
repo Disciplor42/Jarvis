@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { Task, StudySessionLog } from '../types';
+import { useVoiceInput } from '../hooks/useVoiceInput';
 
 interface ChronoMeterProps {
   tasks: Task[];
@@ -20,9 +21,13 @@ interface ChronoMeterProps {
       resetTimer: () => void;
       setMode: (mode: 'POMODORO' | 'STOPWATCH') => void;
   };
+  groqApiKey: string;
+  modelConfig: { jarvis: string; transcription: string };
 }
 
-const ChronoMeter: React.FC<ChronoMeterProps> = ({ tasks, onLogTime, theme = 'cyan', timerState, timerControls }) => {
+const ChronoMeter: React.FC<ChronoMeterProps> = ({ 
+  tasks, onLogTime, theme = 'cyan', timerState, timerControls, groqApiKey, modelConfig 
+}) => {
   const [selectedTaskId, setSelectedTaskId] = useState<string>('');
   const [isDebriefOpen, setIsDebriefOpen] = useState(false);
   
@@ -31,6 +36,19 @@ const ChronoMeter: React.FC<ChronoMeterProps> = ({ tasks, onLogTime, theme = 'cy
   const [interferenceInput, setInterferenceInput] = useState('');
   const [interferences, setInterferences] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
+
+  // Voice Inputs
+  const { 
+      isListening: isListeningInt, 
+      isProcessing: isProcInt, 
+      toggleListening: toggleInt 
+  } = useVoiceInput((text) => setInterferenceInput(text), groqApiKey, modelConfig.transcription);
+
+  const { 
+      isListening: isListeningNote, 
+      isProcessing: isProcNote, 
+      toggleListening: toggleNote 
+  } = useVoiceInput((text) => setNotes(prev => prev + (prev ? ' ' : '') + text), groqApiKey, modelConfig.transcription);
 
   const handleStop = () => {
       timerControls.toggleTimer();
@@ -78,6 +96,25 @@ const ChronoMeter: React.FC<ChronoMeterProps> = ({ tasks, onLogTime, theme = 'cy
   const accentColor = theme === 'red' ? 'text-red-500' : 'text-cyan-500';
   const borderColor = theme === 'red' ? 'border-red-500' : 'border-cyan-500';
 
+  // Helper for voice button style
+  const renderVoiceBtn = (listening: boolean, processing: boolean, toggle: () => void) => (
+      <button 
+          onClick={toggle}
+          disabled={processing && !listening}
+          className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-all ${listening ? 'text-red-500 bg-red-900/20' : processing ? 'text-cyan-400 animate-spin' : 'text-slate-500 hover:text-cyan-400'}`}
+          title="Dictate"
+      >
+          {processing ? (
+              <svg className="w-3 h-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+          ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
+                  <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
+                  <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
+              </svg>
+          )}
+      </button>
+  );
+
   if (isDebriefOpen) {
       return (
           <div className="h-full p-6 bg-[#05050a] flex flex-col animate-fade-in">
@@ -102,14 +139,17 @@ const ChronoMeter: React.FC<ChronoMeterProps> = ({ tasks, onLogTime, theme = 'cy
                   <div>
                       <label className="block text-[10px] text-slate-500 uppercase font-bold mb-2">Interference Log</label>
                       <div className="flex gap-2 mb-2">
-                          <input 
-                            type="text" 
-                            value={interferenceInput}
-                            onChange={(e) => setInterferenceInput(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && addInterference()}
-                            placeholder="e.g. Phone, Noise..."
-                            className="flex-1 bg-slate-900 border border-slate-700 text-xs p-2 text-white outline-none focus:border-cyan-500"
-                          />
+                          <div className="relative flex-1">
+                            <input 
+                                type="text" 
+                                value={interferenceInput}
+                                onChange={(e) => setInterferenceInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && addInterference()}
+                                placeholder="e.g. Phone, Noise..."
+                                className="w-full bg-slate-900 border border-slate-700 text-xs p-2 pr-8 text-white outline-none focus:border-cyan-500"
+                            />
+                            {renderVoiceBtn(isListeningInt, isProcInt, toggleInt)}
+                          </div>
                           <button onClick={addInterference} className="bg-slate-800 px-3 text-xs font-bold text-slate-300 border border-slate-600">+</button>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -123,12 +163,17 @@ const ChronoMeter: React.FC<ChronoMeterProps> = ({ tasks, onLogTime, theme = 'cy
 
                   <div>
                       <label className="block text-[10px] text-slate-500 uppercase font-bold mb-2">Session Notes</label>
-                      <textarea 
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 text-xs p-2 h-20 outline-none focus:border-cyan-500 resize-none font-mono"
-                        placeholder="Log cognitive breakthroughs..."
-                      />
+                      <div className="relative">
+                        <textarea 
+                            value={notes}
+                            onChange={(e) => setNotes(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 text-xs p-2 h-20 outline-none focus:border-cyan-500 resize-none font-mono"
+                            placeholder="Log cognitive breakthroughs..."
+                        />
+                        <div className="absolute right-2 bottom-2">
+                             {renderVoiceBtn(isListeningNote, isProcNote, toggleNote)}
+                        </div>
+                      </div>
                   </div>
               </div>
 

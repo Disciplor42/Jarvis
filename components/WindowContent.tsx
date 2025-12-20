@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { WindowType, Task, CalendarEvent, WeatherData, AppSettings, AiParseResult, Project, Subtopic, StudySessionLog } from '../types';
+import { WindowType, Task, CalendarEvent, WeatherData, AppSettings, AiParseResult, Project, Subtopic, StudySessionLog, AppMode } from '../types';
 
 // Components
 import CommandBar from './CommandBar';
@@ -11,6 +11,7 @@ import DailyBriefing from './DailyBriefing';
 import ContextChat from './ContextChat';
 import ProjectView from './ProjectView';
 import ChronoMeter from './ChronoMeter';
+import MasterDashboard from './MasterDashboard';
 
 interface WindowContentProps {
     type: WindowType;
@@ -25,6 +26,7 @@ interface WindowContentProps {
         isBriefingLoading: boolean;
         isProcessing: boolean;
         thanatosisMode: boolean;
+        sessionLogs: StudySessionLog[];
     };
     actions: {
         setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
@@ -40,14 +42,15 @@ interface WindowContentProps {
         setIsModalOpen: (isOpen: boolean) => void;
         toggleWindow: (type: WindowType, title: string) => void;
         onInitializeTask?: (topic: Subtopic, project: Project) => void;
-        onLogSession: (data: StudySessionLog) => void; // New prop
+        onLogSession: (data: StudySessionLog) => void;
     };
     activeProtocolId?: string;
     timerState?: any;
     timerControls?: any;
+    currentMode?: AppMode; // Added
 }
 
-const WindowContent: React.FC<WindowContentProps> = ({ type, data, actions, activeProtocolId, timerState, timerControls }) => {
+const WindowContent: React.FC<WindowContentProps> = ({ type, data, actions, activeProtocolId, timerState, timerControls, currentMode }) => {
     
     switch (type) {
         case 'TASKS':
@@ -73,7 +76,6 @@ const WindowContent: React.FC<WindowContentProps> = ({ type, data, actions, acti
                     onInitializeTask={actions.onInitializeTask}
                     activeProtocolId={activeProtocolId}
                     onImportSyllabus={(json) => {
-                        // Basic validation
                         if(Array.isArray(json) && json[0].chapters) {
                             actions.setProjects(prev => [...prev, ...json]);
                         } else if(json.chapters) {
@@ -89,9 +91,7 @@ const WindowContent: React.FC<WindowContentProps> = ({ type, data, actions, acti
                 <ChronoMeter 
                     tasks={data.tasks}
                     onLogTime={(tid, sec, logData) => {
-                        // 1. Update Task Timer
                         actions.setTasks(prev => prev.map(t => t.id === tid ? { ...t, timeLogged: (t.timeLogged || 0) + sec } : t));
-                        // 2. Log Session to Data Store
                         actions.onLogSession({
                             id: Date.now().toString(),
                             timestamp: Date.now(),
@@ -99,12 +99,24 @@ const WindowContent: React.FC<WindowContentProps> = ({ type, data, actions, acti
                             taskId: tid,
                             ...logData
                         });
-                        // 3. Update decay on related project topic if applicable
-                        // (Requires looking up which topic corresponds to this task - logic handled in parent or complex)
                     }}
                     theme={data.thanatosisMode ? 'red' : 'cyan'}
                     timerState={timerState}
                     timerControls={timerControls}
+                    groqApiKey={data.settings.groqApiKey}
+                    modelConfig={data.settings.models}
+                />
+            );
+        case 'DASHBOARD':
+            return (
+                <MasterDashboard
+                    tasks={data.tasks}
+                    projects={data.projects}
+                    events={data.events}
+                    timerState={timerState}
+                    activeProtocol={activeProtocolId}
+                    sessionLogs={data.sessionLogs || []}
+                    onNavigate={(view) => actions.toggleWindow(view as WindowType, view)}
                 />
             );
         case 'MEMORY':
@@ -137,6 +149,7 @@ const WindowContent: React.FC<WindowContentProps> = ({ type, data, actions, acti
                     groqApiKey={data.settings.groqApiKey}
                     modelConfig={data.settings.models}
                     onCommandProcessed={actions.handleCommandResults}
+                    currentMode={currentMode}
                 />
             );
         case 'COMMAND':
@@ -151,6 +164,7 @@ const WindowContent: React.FC<WindowContentProps> = ({ type, data, actions, acti
                     modelConfig={data.settings.models}
                     theme={data.thanatosisMode ? 'red' : 'cyan'}
                     weatherData={data.weatherData}
+                    currentMode={currentMode}
                 />
             );
         case 'WEATHER':

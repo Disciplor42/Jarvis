@@ -39,6 +39,8 @@ export const useVoiceInput = (
         if (text.trim()) {
           onCommandRef.current(text);
         }
+      } else {
+        setVoiceError("NO AUDIO");
       }
     } catch (err: any) {
       console.error("Transcription failed:", err);

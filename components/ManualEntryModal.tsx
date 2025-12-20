@@ -11,7 +11,7 @@ interface ManualEntryModalProps {
   onUpdateTask: (task: Task) => void;
   onAddEvent: (event: Omit<CalendarEvent, 'id'>) => void;
   taskToEdit?: Task | null;
-  isDraft?: boolean; // New prop to indicate if editing a draft proposal
+  isDraft?: boolean; 
   apiKey: string;
   groqApiKey: string;
   modelConfig: { jarvis: string; transcription: string };
@@ -54,7 +54,7 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
   const [aiInput, setAiInput] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
 
-  // Unified Voice Input using Groq Whisper
+  // Unified Voice Input using Groq Whisper for Command Bar
   const { 
     isListening, 
     isProcessing: isTranscribing, 
@@ -67,6 +67,20 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
     groqApiKey, 
     modelConfig.transcription
   );
+
+  // Specific Dictation Hooks
+  const { 
+      isListening: isListeningTitle, 
+      isProcessing: isProcTitle, 
+      toggleListening: toggleTitle 
+  } = useVoiceInput((text) => setTitle(text), groqApiKey, modelConfig.transcription);
+
+  const { 
+      isListening: isListeningDetails, 
+      isProcessing: isProcDetails, 
+      toggleListening: toggleDetails 
+  } = useVoiceInput((text) => setDetails(prev => prev + (prev ? ' ' : '') + text), groqApiKey, modelConfig.transcription);
+
 
   // Load task data when editing
   useEffect(() => {
@@ -129,18 +143,12 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
 
     setIsAiProcessing(true);
     try {
-        // Just send empty context for the modal helper
-        // Adding empty projects array as 7th argument
         const results = await parseUserCommand(text, groqApiKey, modelConfig, 'JARVIS', [], [], []);
-        
-        // Use the first result to populate the modal
         const result = results[0];
 
-        // Map AI result to Form State
         if (result.action === 'CREATE_TASK' && result.taskData) {
             if (result.taskData.title) setTitle(result.taskData.title);
             if (result.taskData.priority) setPriority(result.taskData.priority);
-            // Corrected project to projectId
             if (result.taskData.projectId) setProject(result.taskData.projectId);
             if (result.taskData.details) setDetails(result.taskData.details);
             if (result.taskData.dueDate) {
@@ -212,7 +220,6 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
 
     let finalDate = undefined;
     if (dueDate) {
-       // Ensure valid ISO string
        finalDate = new Date(`${dueDate}T00:00:00`).toISOString();
     }
     
@@ -240,6 +247,26 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
 
   const isGlobalProcessing = isAiProcessing || isTranscribing;
 
+  // Helper for voice button style
+  const renderVoiceBtn = (listening: boolean, processing: boolean, toggle: () => void, positionClass: string = "absolute right-2 top-1/2 -translate-y-1/2") => (
+      <button 
+          type="button"
+          onClick={toggle}
+          disabled={processing && !listening}
+          className={`${positionClass} p-1.5 rounded-full transition-all ${listening ? 'text-red-500 bg-red-900/20' : processing ? 'text-cyan-400 animate-spin' : 'text-slate-500 hover:text-cyan-400'}`}
+          title="Dictate"
+      >
+          {processing ? (
+              <svg className="w-3 h-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+          ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
+                  <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
+                  <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
+              </svg>
+          )}
+      </button>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
       <div className="bg-slate-900 border border-slate-700 w-full max-w-lg shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-fade-in-up flex flex-col max-h-[90vh]">
@@ -253,7 +280,7 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
           </div>
         </div>
 
-        {/* AI Assist Bar */}
+        {/* AI Assist Bar (Existing) */}
         <div className="bg-slate-950/50 border-b border-slate-800 p-2 flex gap-2 items-center">
              <div className="flex-1 relative">
                 <input 
@@ -295,14 +322,17 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 tracking-wider">Operational Title</label>
-            <input 
-              type="text" 
-              required
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="e.g., Calibrate Sensors"
-              className="w-full px-4 py-3 bg-slate-950 border border-slate-700 text-slate-200 focus:border-red-500 outline-none text-sm font-mono placeholder-slate-700"
-            />
+            <div className="relative">
+                <input 
+                type="text" 
+                required
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="e.g., Calibrate Sensors"
+                className="w-full px-4 py-3 bg-slate-950 border border-slate-700 text-slate-200 focus:border-red-500 outline-none text-sm font-mono placeholder-slate-700 pr-8"
+                />
+                {renderVoiceBtn(isListeningTitle, isProcTitle, toggleTitle)}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -412,13 +442,16 @@ const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
 
             <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 tracking-wider">Mission Brief / Details</label>
-                <textarea
-                    value={details}
-                    onChange={e => setDetails(e.target.value)}
-                    placeholder="Input operational parameters..."
-                    rows={3}
-                    className="w-full px-4 py-2 bg-slate-950 border border-slate-700 text-slate-200 focus:border-red-500 outline-none text-sm resize-none font-mono placeholder-slate-700"
-                />
+                <div className="relative">
+                    <textarea
+                        value={details}
+                        onChange={e => setDetails(e.target.value)}
+                        placeholder="Input operational parameters..."
+                        rows={3}
+                        className="w-full px-4 py-2 bg-slate-950 border border-slate-700 text-slate-200 focus:border-red-500 outline-none text-sm resize-none font-mono placeholder-slate-700 pr-8"
+                    />
+                    {renderVoiceBtn(isListeningDetails, isProcDetails, toggleDetails, "absolute right-2 top-2")}
+                </div>
             </div>
             
             {/* Subtasks Section */}

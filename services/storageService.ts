@@ -1,4 +1,3 @@
-
 import { UserData } from '../types';
 
 const API_URL_KEY = 'JARVIS_API_URL';
@@ -97,7 +96,18 @@ export const fetchUserData = async (username: string): Promise<UserData> => {
       if (localData) {
           return JSON.parse(localData);
       }
-      return { tasks: [], events: [], memory: [], projects: [], sessionLogs: [] };
+      return { 
+        tasks: [], 
+        events: [], 
+        memory: [], 
+        projects: [], 
+        sessionLogs: [],
+        settings: {
+          groqApiKey: '',
+          models: { jarvis: '', transcription: '' },
+          layoutMacros: []
+        }
+      };
   }
 };
 

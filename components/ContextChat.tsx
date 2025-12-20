@@ -1,20 +1,21 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Task, AiParseResult, ChatMessage } from '../types';
+import { Task, AiParseResult, ChatMessage, AppMode } from '../types';
 import { parseUserCommand } from '../services/aiService';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 
 interface ContextChatProps {
     isOpen: boolean;
-    onClose: () => void; // Kept for internal close button if needed, or handled by parent window
+    onClose: () => void;
     contextTask: Task | null;
     groqApiKey: string;
     modelConfig: { jarvis: string; transcription: string };
     onCommandProcessed: (results: AiParseResult[]) => void;
+    currentMode?: AppMode;
 }
 
 const ContextChat: React.FC<ContextChatProps> = ({ 
-    isOpen, onClose, contextTask, groqApiKey, modelConfig, onCommandProcessed 
+    isOpen, onClose, contextTask, groqApiKey, modelConfig, onCommandProcessed, currentMode
 }) => {
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -85,7 +86,8 @@ const ContextChat: React.FC<ContextChatProps> = ({
                 [], 
                 [], 
                 "Standard Atmosphere",
-                contextTask?.id 
+                contextTask?.id,
+                currentMode // Pass mode
             );
 
             // Execute actions immediately if valid
